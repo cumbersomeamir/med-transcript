@@ -16,7 +16,77 @@ export default function MedicalDialogue() {
   const mediaRecorderRef = useRef(null);
   const audioRef = useRef(null);
   const chunksRef = useRef([]);
+  const chunkQueueRef = useRef([]);
+  const processingRef = useRef(false);
+  const recordingDoneRef = useRef(false);
   const fileInputRef = useRef(null);
+
+  // Process queued 10s chunks one by one
+  const processChunkQueue = async () => {
+    if (processingRef.current || chunkQueueRef.current.length === 0) {
+      return;
+    }
+
+    processingRef.current = true;
+    const chunk = chunkQueueRef.current.shift();
+
+    try {
+      const file = new File([chunk], `chunk-${Date.now()}.wav`, {
+        type: 'audio/wav'
+      });
+      const formData = new FormData();
+      formData.append('audio', file);
+
+      const diarizeResponse = await fetch('/api/diarize', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (diarizeResponse.ok) {
+        const data = await diarizeResponse.json();
+        if (data.transcript) {
+          setTranscript((prev) => prev + data.transcript + '\n');
+        }
+      } else {
+        console.error('Diarization chunk failed:', diarizeResponse.status);
+      }
+    } catch (error) {
+      console.error('Error processing chunk:', error);
+    } finally {
+      processingRef.current = false;
+      if (chunkQueueRef.current.length > 0) {
+        processChunkQueue();
+      } else if (recordingDoneRef.current) {
+        analyzeTranscript();
+      }
+    }
+  };
+
+  // Analyze final transcript when all chunks processed
+  const analyzeTranscript = async () => {
+    if (!transcript) return;
+
+    setIsProcessing(true);
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript })
+      });
+      if (response.ok) {
+        const analysisData = await response.json();
+        setInsights(analysisData);
+        setCurrentStep(3);
+      } else {
+        const err = await response.text();
+        console.error('Analysis failed:', err);
+      }
+    } catch (error) {
+      console.error('Error analyzing transcript:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   // Recording functions
   const startRecording = async () => {
@@ -24,10 +94,14 @@ export default function MedicalDialogue() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
       chunksRef.current = [];
+      chunkQueueRef.current = [];
+      recordingDoneRef.current = false;
 
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           chunksRef.current.push(event.data);
+          chunkQueueRef.current.push(event.data);
+          processChunkQueue();
         }
       };
 
@@ -36,11 +110,13 @@ export default function MedicalDialogue() {
         const file = new File([blob], 'recording.wav', { type: 'audio/wav' });
         setAudioFile(file);
         setAudioUrl(URL.createObjectURL(blob));
-        // Don't auto-process, wait for user action
-        console.log('Recording completed, file ready for processing');
+        setIsProcessing(true);
+        recordingDoneRef.current = true;
+        console.log('Recording completed, finalizing...');
+        processChunkQueue();
       };
 
-      mediaRecorderRef.current.start();
+      mediaRecorderRef.current.start(10000); // emit chunks every 10 seconds
       setIsRecording(true);
       setCurrentStep(2);
     } catch (error) {
