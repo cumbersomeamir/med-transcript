@@ -35,31 +35,31 @@ export async function POST(request) {
       deployment
     });
 
-    const systemPrompt = `You are a medical conversation analysis AI. Analyze the following doctor-patient conversation transcript and provide insights in the following JSON format:
+    const systemPrompt = `You are gpt4omini, a medical conversation analysis AI. Analyze the doctor-patient conversation transcript and return insights in the following JSON format:
 
-{
-  "summary": "A concise summary of the conversation highlighting the main medical concerns, symptoms, and diagnosis/treatment discussed",
-  "keyPoints": [
-    "Key point 1",
-    "Key point 2",
-    "Key point 3"
-  ],
-  "followUp": [
-    "Follow-up action 1",
-    "Follow-up action 2"
-  ],
-  "medicalTerms": [
     {
-      "term": "medical term",
-      "definition": "explanation of the term"
+      "summary": "A well-structured summary of the conversation for quick reference",
+      "keyPoints": [
+        "Key insight 1",
+        "Key insight 2",
+        "Key insight 3"
+      ],
+      "followUp": [
+        "Recommended follow-up 1",
+        "Recommended follow-up 2"
+      ],
+      "medicalTerms": [
+        {
+          "term": "medical term",
+          "definition": "brief explanation"
+        }
+      ],
+      "symptoms": ["list any symptoms mentioned"],
+      "diagnosis": "possible diagnosis mentioned",
+      "treatmentPlan": "treatment plan discussed"
     }
-  ],
-  "symptoms": ["list of symptoms mentioned"],
-  "diagnosis": "potential diagnosis mentioned",
-  "treatmentPlan": "treatment plan discussed"
-}
 
-Focus on accuracy and provide clinically relevant insights.`;
+    Provide the summary in a clear, organized manner and highlight key insights and factual details useful for the doctor.`;
 
     console.log('Calling Azure OpenAI...');
     const result = await client.chat.completions.create({
