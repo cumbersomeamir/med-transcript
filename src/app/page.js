@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Mic, Upload, Square, Play, Pause, Volume2 } from 'lucide-react';
+import { addSession } from '@/store/sessionsSlice';
 
 export default function MedicalDialogue() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -12,6 +14,10 @@ export default function MedicalDialogue() {
   const [insights, setInsights] = useState({});
   const [isPlaying, setIsPlaying] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const dispatch = useDispatch();
+  const sessions = useSelector(state => state.sessions);
   
   const mediaRecorderRef = useRef(null);
   const audioRef = useRef(null);
@@ -81,6 +87,7 @@ export default function MedicalDialogue() {
       console.error('No file provided for processing');
       return;
     }
+    let analysisData = null;
     
     console.log('Starting audio processing for:', file.name);
     setIsProcessing(true);
@@ -142,18 +149,23 @@ export default function MedicalDialogue() {
         const errorData = await analysisResponse.text();
         console.error('Analysis failed:', analysisResponse.status, errorData);
         // Continue anyway with just transcript
-        setInsights({
+        analysisData = {
           summary: 'Analysis failed, but transcript is available above.',
           keyPoints: ['Transcript processed successfully'],
           followUp: ['Please review the transcript manually'],
           medicalTerms: []
-        });
+        };
+        setInsights(analysisData);
       } else {
-        const analysisData = await analysisResponse.json();
+        analysisData = await analysisResponse.json();
         console.log('Analysis successful:', analysisData);
         setInsights(analysisData);
       }
       
+      dispatch(addSession({
+        transcript: diarizeData.transcript,
+        insights: analysisData
+      }));
       setCurrentStep(3);
       console.log('All processing completed successfully');
     } catch (error) {
@@ -220,6 +232,12 @@ export default function MedicalDialogue() {
             </div>
             <div className="text-sm text-gray-500 flex items-center space-x-4">
               AI-Powered Medical Conversation Analysis
+              <button
+                onClick={() => setShowHistory(true)}
+                className="px-3 py-1 bg-gray-100 text-gray-700 rounded-md text-xs hover:bg-gray-200 transition-colors"
+              >
+                History
+              </button>
               <button
                 onClick={testAPIs}
                 className="px-3 py-1 bg-blue-100 text-blue-600 rounded-md text-xs hover:bg-blue-200 transition-colors"
@@ -556,6 +574,29 @@ export default function MedicalDialogue() {
           </div>
         </div>
       </div>
+      {showHistory && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-11/12 max-w-lg p-6 overflow-y-auto max-h-[80vh]">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Past Sessions</h2>
+              <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-gray-700">Close</button>
+            </div>
+            {sessions.length === 0 ? (
+              <p className="text-sm text-gray-500">No sessions recorded yet.</p>
+            ) : (
+              <ul className="space-y-4">
+                {sessions.map((s) => (
+                  <li key={s.id} className="border rounded p-2">
+                    <div className="text-xs text-gray-400 mb-1">{new Date(s.id).toLocaleString()}</div>
+                    <div className="text-sm font-medium mb-1">{s.insights?.summary || 'No summary'}</div>
+                    <pre className="whitespace-pre-wrap text-xs text-gray-700 max-h-32 overflow-y-auto">{s.transcript}</pre>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
