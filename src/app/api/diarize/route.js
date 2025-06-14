@@ -2,32 +2,54 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   try {
-    const { url } = await request.json();
+    const contentType = request.headers.get('content-type') || '';
+    let requestBody;
+    let fetchHeaders = {};
+    let url;
 
-    if (!url) {
+    if (contentType.includes('application/json')) {
+      ({ url } = await request.json());
+
+      if (!url) {
+        return NextResponse.json(
+          { error: 'Audio URL is required' },
+          { status: 400 }
+        );
+      }
+
+      console.log(`Received audio URL: ${url}`);
+      requestBody = JSON.stringify({ url });
+      fetchHeaders['Content-Type'] = 'application/json';
+    } else if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData();
+      const file = formData.get('audio');
+
+      if (!file) {
+        return NextResponse.json(
+          { error: 'Audio file is required' },
+          { status: 400 }
+        );
+      }
+
+      console.log(`Received audio file: ${file.name}`);
+      const buffer = Buffer.from(await file.arrayBuffer());
+      requestBody = buffer;
+      fetchHeaders['Content-Type'] = file.type || 'application/octet-stream';
+    } else {
       return NextResponse.json(
-        { error: 'Audio URL is required' },
+        { error: 'Unsupported Content-Type' },
         { status: 400 }
       );
     }
-
-    console.log(`Received audio URL: ${url}`);
 
     // Use environment variable for diarization API URL
     const diarizationApiUrl = process.env.DIARIZATION_API_URL || 'http://20.121.121.110:5286/diarize';
     console.log(`Using diarization API URL: ${diarizationApiUrl}`);
 
-    // Log the full request being made
-    const requestBody = JSON.stringify({ url });
-    console.log(`Sending request body: ${requestBody}`);
-
-    // Call your diarization API
     console.log('Making fetch request to diarization API...');
     const response = await fetch(diarizationApiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: fetchHeaders,
       body: requestBody,
     });
 
