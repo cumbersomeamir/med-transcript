@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Mic, Upload, Square, Play, Pause, Volume2 } from 'lucide-react';
 
 export default function MedicalDialogue() {
@@ -12,11 +12,45 @@ export default function MedicalDialogue() {
   const [insights, setInsights] = useState({});
   const [isPlaying, setIsPlaying] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [selectedSession, setSelectedSession] = useState(null);
   
   const mediaRecorderRef = useRef(null);
   const audioRef = useRef(null);
   const chunksRef = useRef([]);
   const fileInputRef = useRef(null);
+
+  // Fetch sessions on mount
+  useEffect(() => {
+    fetch('/api/session')
+      .then(res => res.json())
+      .then(data => setSessions(data));
+  }, []);
+
+  // Save session after processing
+  const saveSession = async (transcript, insights, audioUrl) => {
+    const res = await fetch('/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript, insights, audioUrl })
+    });
+    if (res.ok) {
+      const { sessionId } = await res.json();
+      // Optionally refetch sessions
+      fetch('/api/session')
+        .then(res => res.json())
+        .then(data => setSessions(data));
+    }
+  };
+
+  // When a session is clicked, load its data
+  const handleSessionClick = (session) => {
+    setSelectedSession(session);
+    setTranscript(session.transcript);
+    setInsights(session.insights);
+    setAudioUrl(session.audioUrl);
+    setCurrentStep(3);
+  };
 
   // Recording functions
   const startRecording = async () => {
@@ -152,6 +186,7 @@ export default function MedicalDialogue() {
         const analysisData = await analysisResponse.json();
         console.log('Analysis successful:', analysisData);
         setInsights(analysisData);
+        await saveSession(diarizeData.transcript, analysisData, awsUrl);
       }
       
       setCurrentStep(3);
@@ -233,8 +268,28 @@ export default function MedicalDialogue() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Panel - Recording/Processing */}
+          {/* Left Panel - Sessions + Recording/Processing */}
           <div className="bg-white rounded-lg shadow-sm p-6">
+            {/* Session List */}
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold mb-2">Previous Sessions</h2>
+              <div className="max-h-40 overflow-y-auto border rounded-md divide-y">
+                {sessions.length === 0 && <div className="p-2 text-gray-400">No sessions yet</div>}
+                {sessions.map(session => (
+                  <div
+                    key={session.sessionId}
+                    className={`relative p-3 cursor-pointer hover:bg-blue-50 rounded transition-colors duration-100 ${selectedSession && selectedSession.sessionId === session.sessionId ? 'bg-blue-100' : ''}`}
+                    onClick={() => handleSessionClick(session)}
+                    style={{ minHeight: '48px' }}
+                  >
+                    <div className="truncate text-sm font-semibold text-black pr-16">{session.transcript.slice(0, 60) || 'No transcript'}</div>
+                    <div className="absolute bottom-2 right-3 text-xs text-gray-400" style={{ fontSize: '11px' }}>
+                      {new Date(session.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
             {currentStep === 1 && (
               <>
                 <h2 className="text-2xl font-semibold text-gray-900 mb-2">
