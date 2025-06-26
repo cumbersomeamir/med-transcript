@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { uploadToS3, generateUniqueFilename, validateAudioFile } from '@/lib/s3-upload';
 
 export async function GET() {
   console.log('Test API called');
@@ -41,38 +42,43 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    // Test file upload without S3
     const formData = await request.formData();
     const file = formData.get('audio');
     
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
-    
-    const fileInfo = {
-      name: file.name,
-      size: file.size,
-      type: file.type
-    };
-    
-    // Test environment again
-    const envCheck = {
-      hasAwsKey: !!process.env.AWS_ACCESS_KEY,
-      hasAwsSecret: !!process.env.AWS_SECRET_KEY,
-      bucketName: process.env.S3_BUCKET_NAME,
-      region: process.env.AWS_REGION
-    };
-    
+
+    // Validate audio file type
+    if (!validateAudioFile(file)) {
+      return NextResponse.json({ error: 'Invalid audio file type. Only .mp3 and .wav are supported.' }, { status: 400 });
+    }
+
+    // Generate unique filename for S3
+    const s3Key = generateUniqueFilename(file.name);
+
+    // Upload to S3
+    let awsUrl;
+    try {
+      awsUrl = await uploadToS3(file, s3Key);
+    } catch (err) {
+      return NextResponse.json({ error: 'Failed to upload to S3', details: err.message }, { status: 500 });
+    }
+
     return NextResponse.json({
-      message: 'File received successfully',
-      fileInfo,
-      envCheck,
+      message: 'File uploaded successfully',
+      awsUrl,
+      fileInfo: {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Test POST error:', error);
+    console.error('Upload POST error:', error);
     return NextResponse.json(
-      { error: 'Test failed', details: error.message },
+      { error: 'Upload failed', details: error.message },
       { status: 500 }
     );
   }
